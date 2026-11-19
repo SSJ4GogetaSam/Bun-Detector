@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Artisanal Bread Detector — Teachable Machine Vision</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts: Inter & Playfair Display for Bakery Aesthetic -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
+
+  <!-- TensorFlow.js & Teachable Machine Image Library -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            serif: ['Playfair Display', 'serif'],
+          },
+          colors: {
+            bakery: {
+              cream: '#FAF6F0',
+              parchment: '#F3ECE1',
+              crust: '#5C3A21',
+              crustDark: '#3E2514',
+              wheat: '#D98A2B',
+              wheatLight: '#F3D09E',
+              roast: '#2B1B12',
+              muted: '#7A6352',
+              border: '#E5D8C5'
+            }
+          },
+          boxShadow: {
+            'warm': '0 10px 30px -5px rgba(92, 58, 33, 0.08), 0 4px 12px -2px rgba(92, 58, 33, 0.04)',
+            'glow': '0 0 0 3px rgba(217, 138, 43, 0.35), 0 12px 28px -4px rgba(217, 138, 43, 0.25)'
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #FAF6F0;
+      color: #2B1B12;
+      background-image: radial-gradient(#E5D8C5 0.75px, transparent 0.75px);
+      background-size: 24px 24px;
+    }
+
+    /* Smooth custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #F3ECE1;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #C8B398;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #5C3A21;
+    }
+
+    /* Webcam scanning laser animation */
+    @keyframes scanline {
+      0% { top: 4%; opacity: 0.2; }
+      50% { top: 92%; opacity: 0.9; }
+      100% { top: 4%; opacity: 0.2; }
+    }
+    .scanner-beam {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #D98A2B, #FFF3E0, #D98A2B, transparent);
+      box-shadow: 0 0 12px #D98A2B;
+      animation: scanline 3s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    .mirror-video canvas, .mirror-video video {
+      transform: scaleX(-1);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-bakery-wheat selection:text-white">
+
+  <!-- Top Navigation Header -->
+  <header class="sticky top-0 z-30 bg-bakery-cream/90 backdrop-blur-md border-b border-bakery-border">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <!-- Custom SVG Bakery Crest Logo -->
+        <div class="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-bakery-crust text-bakery-cream flex items-center justify-center shadow-md shrink-0">
+          <svg class="w-6 h-6 text-bakery-wheat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 13c0-4.4 3.6-8 8-8s8 3.6 8 8v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3Z"/>
+            <path d="M9 5.5c.5 1.5.5 3 0 4.5"/>
+            <path d="M12 5c.5 1.5.5 3.5 0 5"/>
+            <path d="M15 5.5c.5 1.5.5 3 0 4.5"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="font-serif text-lg sm:text-2xl font-bold text-bakery-roast leading-tight">
+            Artisanal Bread Detector
+          </h1>
+          <p class="text-xs text-bakery-muted hidden sm:block">
+            Teachable Machine Vision &bull; Model ID: <span class="font-mono text-bakery-crust font-medium">T2TmcIlq4</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Status Pill & Integration Code Trigger -->
+      <div class="flex items-center gap-2 sm:gap-3">
+        <div id="statusBadge" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-200 transition-all">
+          <span id="statusDot" class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+          <span id="statusText">Loading Model...</span>
+        </div>
+
+        <button id="toggleCodeBtn" type="button" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-bakery-parchment hover:bg-bakery-border/70 text-bakery-crust border border-bakery-border transition active:scale-95">
+          <svg class="w-4 h-4 text-bakery-wheat" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+          </svg>
+          <span>View Code</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Notification Toast Banner (Replaces alert) -->
+  <div id="toastBanner" class="hidden fixed bottom-5 right-5 z-50 max-w-sm bg-bakery-crustDark text-bakery-cream px-4 py-3 rounded-2xl shadow-xl border border-bakery-wheat/40 flex items-start gap-3 transition-all">
+    <svg class="w-5 h-5 text-bakery-wheat shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <div class="text-xs sm:text-sm flex-1" id="toastMessage">Notification</div>
+    <button onclick="hideToast()" class="text-bakery-wheatLight hover:text-white text-xs font-bold">✕</button>
+  </div>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-8">
+
+    <!-- Top Dashboard Grid: Left = Camera/Upload Input, Right = Detected Bread Showcase + Probabilities -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+
+      <!-- LEFT COLUMN (7 cols on lg): Visual Input Station -->
+      <section class="lg:col-span-7 bg-white rounded-3xl p-5 sm:p-6 shadow-warm border border-bakery-border space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="font-serif text-xl font-bold text-bakery-roast">Bakery Scanner Input</h2>
+            <p class="text-xs sm:text-sm text-bakery-muted">Use live webcam or upload a bread photograph for instant recognition.</p>
+          </div>
+
+          <!-- Input Mode Switcher Tabs -->
+          <div class="inline-flex p-1 rounded-2xl bg-bakery-parchment border border-bakery-border">
+            <button id="modeWebcamBtn" type="button" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-bakery-crust text-white shadow-sm transition">
+              Live Camera
+            </button>
+            <button id="modeUploadBtn" type="button" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-bakery-muted hover:text-bakery-roast transition">
+              Upload Photo
+            </button>
+          </div>
+        </div>
+
+        <!-- WEBCAM PANEL -->
+        <div id="webcamPanel" class="space-y-4">
+          <div class="relative w-full aspect-[4/3] bg-bakery-crustDark rounded-2xl overflow-hidden border-2 border-bakery-border flex items-center justify-center shadow-inner">
+            <!-- Idle State Placeholder -->
+            <div id="webcamPlaceholder" class="text-center p-6 space-y-3 max-w-xs">
+              <div class="w-16 h-16 mx-auto rounded-2xl bg-bakery-crust/60 text-bakery-wheat flex items-center justify-center">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+              </div>
+              <p class="text-sm font-medium text-bakery-cream">Camera is Ready</p>
+              <p class="text-xs text-bakery-wheatLight/80">Click "Start Live Detection" below to inspect baked goods in real time.</p>
+            </div>
+
+            <!-- Teachable Machine Canvas Container -->
+            <div id="webcamContainer" class="hidden w-full h-full flex items-center justify-center mirror-video [&>canvas]:w-full [&>canvas]:h-full [&>canvas]:object-cover"></div>
+
+            <!-- Active Scanning Line -->
+            <div id="scannerBeam" class="hidden scanner-beam"></div>
+
+            <!-- Top-left Live Pill inside viewport -->
+            <div id="liveIndicator" class="hidden absolute top-3 left-3 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-semibold flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+              <span>LIVE SCANNING</span>
+            </div>
+          </div>
+
+          <!-- Webcam Action Controls -->
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2.5">
+              <button id="startWebcamBtn" type="button" disabled class="inline-flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold bg-bakery-wheat hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-md transition active:scale-95">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
+                </svg>
+                <span>Start Live Detection</span>
+              </button>
+
+              <button id="stopWebcamBtn" type="button" class="hidden inline-flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-semibold bg-red-600 hover:bg-red-700 text-white shadow-md transition active:scale-95">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <rect x="5" y="5" width="10" height="10" rx="1.5"/>
+                </svg>
+                <span>Stop Camera</span>
+              </button>
+            </div>
+
+            <!-- Mirror & Flip Camera Controls -->
+            <div class="flex items-center gap-2">
+              <button id="mirrorToggleBtn" type="button" title="Toggle Mirror" class="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-bakery-parchment hover:bg-bakery-border/70 text-bakery-crust border border-bakery-border transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                </svg>
+                <span>Mirror: <strong id="mirrorStateText">ON</strong></span>
+              </button>
+
+              <button id="switchCameraBtn" type="button" title="Switch Front/Back Camera" class="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-bakery-parchment hover:bg-bakery-border/70 text-bakery-crust border border-bakery-border transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <span>Flip Cam</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- IMAGE UPLOAD PANEL -->
+        <div id="uploadPanel" class="hidden space-y-4">
+          <div id="dropZone" class="relative w-full aspect-[4/3] rounded-2xl border-2 border-dashed border-bakery-wheat/70 bg-bakery-parchment/60 hover:bg-bakery-parchment transition flex flex-col items-center justify-center p-6 text-center cursor-pointer overflow-hidden">
+            <input type="file" id="imageFileInput" accept="image/*" class="hidden" />
+            
+            <!-- Prompt when no image uploaded yet -->
+            <div id="uploadPrompt" class="space-y-3 max-w-sm">
+              <div class="w-16 h-16 mx-auto rounded-2xl bg-white text-bakery-wheat flex items-center justify-center shadow-sm border border-bakery-border">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+              </div>
+              <div>
+                <p class="text-sm font-semibold text-bakery-roast">Drop your bread photo here, or <span class="text-bakery-wheat underline">browse</span></p>
+                <p class="text-xs text-bakery-muted mt-1">Supports JPG, PNG, WebP — classified immediately upon upload</p>
+              </div>
+            </div>
+
+            <!-- Uploaded Image Preview -->
+            <img id="uploadedImagePreview" alt="Uploaded Bread Preview" class="hidden w-full h-full object-contain rounded-xl" />
+          </div>
+
+          <div class="flex items-center justify-between gap-3">
+            <button id="chooseAnotherImageBtn" type="button" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-bakery-crust hover:bg-bakery-crustDark text-white transition active:scale-95">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+              </svg>
+              <span>Select Photo</span>
+            </button>
+            <span class="text-xs text-bakery-muted">Tip: Center the bread in good lighting for highest accuracy.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT COLUMN (5 cols on lg): Detected Bread Showcase Box & Confidence Breakdown -->
+      <aside class="lg:col-span-5 space-y-6">
+        
+        <!-- DETECTED BREAD SHOWCASE BOX -->
+        <div id="showcaseCard" class="bg-white rounded-3xl p-5 sm:p-6 shadow-warm border-2 border-bakery-wheat/40 transition-all duration-300">
+          <div class="flex items-center justify-between mb-4">
+            <span class="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-bakery-wheat">
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+              </svg>
+              Detected Bread Showcase
+            </span>
+            <span id="showcaseConfidencePill" class="px-3 py-1 rounded-full text-xs font-bold bg-bakery-parchment text-bakery-crust border border-bakery-border">
+              Awaiting Input
+            </span>
+          </div>
+
+          <!-- Corresponding Picture Box -->
+          <div class="relative w-full h-52 sm:h-56 rounded-2xl overflow-hidden bg-bakery-parchment border border-bakery-border mb-4 group">
+            <img id="showcaseBreadImg" src="" alt="Detected Bread Visual" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <!-- Subtle gradient overlay at bottom for badge legibility -->
+            <div class="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/70 via-black/30 to-transparent flex items-end p-4">
+              <div class="flex items-center justify-between w-full text-white">
+                <span id="showcaseCategoryTag" class="text-xs font-medium bg-bakery-wheat/90 px-2.5 py-0.5 rounded-lg shadow">
+                  Artisanal Bakery Match
+                </span>
+                <span id="showcaseScoreLarge" class="font-mono text-lg font-bold">
+                  --%
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Detected Class Name & Tasting/Bakery Note -->
+          <div class="space-y-1.5">
+            <h3 id="showcaseBreadTitle" class="font-serif text-2xl sm:text-3xl font-bold text-bakery-roast">
+              Ready to Scan
+            </h3>
+            <p id="showcaseBreadDesc" class="text-xs sm:text-sm text-bakery-muted leading-relaxed">
+              Start the webcam or upload a photo. The matching bread illustration and classification confidence will appear here automatically.
+            </p>
+          </div>
+        </div>
+
+        <!-- LIVE PREDICTION BREAKDOWN -->
+        <div class="bg-white rounded-3xl p-5 sm:p-6 shadow-warm border border-bakery-border space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="font-serif text-lg font-bold text-bakery-roast">Class Confidence Breakdown</h3>
+            <span id="classCountBadge" class="text-xs font-semibold text-bakery-muted bg-bakery-parchment px-2.5 py-1 rounded-lg">
+              0 Classes
+            </span>
+          </div>
+
+          <div id="predictionBarsContainer" class="space-y-3">
+            <!-- Populated dynamically once model loads -->
+            <div class="animate-pulse space-y-3">
+              <div class="h-10 bg-bakery-parchment rounded-xl"></div>
+              <div class="h-10 bg-bakery-parchment rounded-xl"></div>
+              <div class="h-10 bg-bakery-parchment rounded-xl"></div>
+            </div>
+          </div>
+        </div>
+
+      </aside>
+    </div>
+
+    <!-- BREAD REFERENCE GALLERY (All classes from Teachable Machine Model with Corresponding Pictures) -->
+    <section class="bg-white rounded-3xl p-5 sm:p-7 shadow-warm border border-bakery-border space-y-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-bakery-border pb-4">
+        <div>
+          <h2 class="font-serif text-xl sm:text-2xl font-bold text-bakery-roast">Bread Reference Gallery</h2>
+          <p class="text-xs sm:text-sm text-bakery-muted">
+            Dynamically loaded classes from your Teachable Machine model paired with visual reference cards. Active match highlights in real time.
+          </p>
+        </div>
+        <div class="text-xs font-mono text-bakery-crust bg-bakery-parchment px-3 py-1.5 rounded-xl border border-bakery-border self-start sm:self-auto">
+          model.getClassLabels()
+        </div>
+      </div>
+
+      <!-- Gallery Grid -->
+      <div id="referenceGalleryGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        <!-- Populated dynamically via JS -->
+      </div>
+    </section>
+
+    <!-- COLLAPSIBLE / DRAWER INTEGRATION CODE SECTION ("follow the relevant with codes") -->
+    <section id="codeReferenceSection" class="bg-bakery-crustDark text-bakery-cream rounded-3xl p-5 sm:p-7 shadow-warm border border-bakery-crust space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-bakery-wheat/20 text-bakery-wheat flex items-center justify-center font-mono font-bold text-sm">
+            &lt;/&gt;
+          </div>
+          <div>
+            <h2 class="font-serif text-lg sm:text-xl font-bold text-white">Teachable Machine Integration Code</h2>
+            <p class="text-xs text-bakery-wheatLight/80">Ready-to-use TensorFlow.js &amp; <code class="text-bakery-wheat">@teachablemachine/image</code> implementation for model <code class="text-bakery-wheat">T2TmcIlq4</code></p>
+          </div>
+        </div>
+
+        <button id="copyCodeBtn" type="button" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-bakery-wheat hover:bg-amber-600 text-white transition active:scale-95">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+          </svg>
+          <span id="copyCodeBtnText">Copy Snippet</span>
+        </button>
+      </div>
+
+      <div class="relative rounded-2xl bg-black/40 border border-white/10 p-4 overflow-x-auto">
+        <pre id="integrationCodeBlock" class="text-xs sm:text-sm font-mono text-amber-100 leading-relaxed"><code>// 1. Teachable Machine Model Endpoint
+const MODEL_URL = "https://teachablemachine.withgoogle.com/models/T2TmcIlq4/";
+let model, webcam, classLabels = [];
+
+// 2. Load Model & Dynamically Read All Class Labels
+async function loadBreadModel() {
+  const modelURL = MODEL_URL + "model.json";
+  const metadataURL = MODEL_URL + "metadata.json";
+  model = await tmImage.load(modelURL, metadataURL);
+  classLabels = model.getClassLabels();
+  console.log("Loaded Bread Classes:", classLabels);
+}
+
+// 3. Classify an Image Element or Webcam Canvas
+async function detectBread(imageOrCanvas) {
+  const predictions = await model.predict(imageOrCanvas);
+  // Sort by highest probability
+  predictions.sort((a, b) => b.probability - a.probability);
+  const topMatch = predictions[0];
+  console.log(`Detected: ${topMatch.className} (${(topMatch.probability * 100).toFixed(1)}%)`);
+  return predictions;
+}</code></pre>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-bakery-border bg-bakery-cream/80 py-5 mt-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-bakery-muted">
+      <span>Artisanal Bread Detector &bull; Powered by TensorFlow.js &amp; Google Teachable Machine</span>
+      <span class="font-mono">Endpoint: https://teachablemachine.withgoogle.com/models/T2TmcIlq4/</span>
+    </div>
+  </footer>
+
+  <script>
+    /**
+     * ============================================================================
+     * ARTISANAL BREAD DETECTOR — APPLICATION LOGIC
+     * ============================================================================
+     */
+
+    const MODEL_BASE_URL = "https://teachablemachine.withgoogle.com/models/T2TmcIlq4/";
+
+    // Application State
+    let tmModel = null;
+    let tmWebcam = null;
+    let classLabels = [];
+    let isWebcamRunning = false;
+    let isMirrored = true;
+    let facingMode = "environment"; // 'user' or 'environment'
+    let animationFrameId = null;
+    let currentTopClass = null;
+
+    // Curated High-Resolution Bread Visuals & Descriptions Dictionary
+    // Maps common bread names (including Filipino & international breads) to reliable Unsplash photos + custom SVG fallbacks
+    const BREAD_VISUAL_CATALOG = [
+      {
+        keywords: ["pandesal", "pan de sal", "salt bread"],
+        title: "Pandesal",
+        category: "Filipino Classic Roll",
+        description: "Soft, slightly sweet, pillowy Filipino breakfast bread rolls coated in fine golden breadcrumbs.",
+        imageUrl: "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80",
+        accentColor: "#D98A2B"
+      },
+      {
+        keywords: ["ensaymada", "ensaimada", "cheese roll"],
+        title: "Ensaymada",
+        category: "Sweet Brioche Pastry",
+        description: "Coiled, buttery brioche pastry generously topped with whipped butter, sugar, and grated cheese.",
+        imageUrl: "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&w=800&q=80",
+        accentColor: "#E09F3E"
+      },
+      {
+        keywords: ["croissant", "viennoiserie", "flaky"],
+        title: "Butter Croissant",
+        category: "French Laminated Pastry",
+        description: "Crescent-shaped French pastry with crisp, golden flaky layers and a tender, buttery honeycomb interior.",
+        imageUrl: "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&w=800&q=80",
+        accentColor: "#C87D28"
+      },
+      {
+        keywords: ["baguette", "french bread", "batard"],
+        title: "French Baguette",
+        category: "Artisanal Crusty Loaf",
+        description: "Long, slender French loaf renowned for its crackling golden crust, scored slashes, and airy chewy crumb.",
+        imageUrl: "https://images.unsplash.com/photo-1597079910443-60c43fc4f729?auto=format&fit=crop&w=800&q=80",
+        accentColor: "#B56E22"
+      },
+      {
+        keywords: ["sourdough", "country loaf", "boule", "artisan"],
+        title: "Artisanal Sourdough",
+        category: "Naturally Leavened Loaf",
+        description: "Fermented with wild starter for a tangy flavor profile, blistered mahogany crust, and open crumb structure.",
+        imageUrl: "https://images.unsplash.com/photo-1585478259715-876acc5be8eb?auto=format&fit=crop&w=800&q=80",
+        accentColor: "#8C4A19"
+      },
+      {
+        keywords: ["loaf", "white bread", "tasty", "sandwich", "slice", "pullman", "pan de molde"],
+        title: "Sliced Sandwich Loaf",
+        category: "Classic Pan Bread",
+        description: "Soft, fine-crumbed pan loaf baked to a golden crust—ideal for toasting and everyday sandwiches.",
+        imageUrl: "https://images.unsplash.com/photo-1598373182133-52452f7691ef?auto=format&fit=crop&w=800&q=80",
+        accentColor: "#D49A42"
+      },
+      {
+        keywords: ["brioche", "challah", "sweet bread"],
+        title: "Golden Brioche",
+        category: "Enriched Egg & Butter Bread",
+        description: "Rich, tender French bread enriched with butter and eggs, featuring a glossy burnished top crust.",
+        imageUrl: "https://images.unsplash.com/photo-1608198093002-ad4e005484ec?auto=format&fit=crop&w=800&q=80",
+        accentColor: "#DF9226"
+      },
+      {
+        keywords: ["ciabatta", "focaccia", "italian", "flatbread"],
+        title: "Rustic Ciabatta / Focaccia",
+        category: "Italian Olive Oil Bread",
+        description: "High-hydration Italian bread baked with olive oil, featuring large irregular air pockets and crisp crust.",
+        imageUrl: "https://images.unsplash.com/photo-1573140247632-f8fd74997d5c?auto=format&fit=crop&w=800&q=80",
+        accentColor: "#9E6B34"
+      },
+      {
+        keywords: ["donut", "doughnut", "berliner"],
+        title: "Glazed Bakery Donut",
+        category: "Sweet Fried Dough",
+        description: "Pillowy yeast-raised or cake ring finished with a delicate sweet sugar glaze.",
+        imageUrl: "https://images.unsplash.com/photo-1551024601-bec78aea704b?auto=format&fit=crop&w=800&q=80",
+        accentColor: "#C96A3B"
+      },
+      {
+        keywords: ["muffin", "cupcake", "banana bread"],
+        title: "Bakery Muffin",
+        category: "Quick Bread & Pastry",
+        description: "Domed, moist individual quick bread baked until golden brown with a tender crumb.",
+        imageUrl: "https://images.unsplash.com/photo-1607958996333-41aef7caefaa?auto=format&fit=crop&w=800&q=80",
+        accentColor: "#7C4D2B"
+      },
+      {
+        keywords: ["roll", "bun", "dinner roll", "monay", "putok", "spanish bread", "kalihim", "kababayan"],
+        title: "Bakery Sweet Roll / Bun",
+        category: "Traditional Bakeshop Favorite",
+        description: "Hand-shaped golden bakery bun with a soft interior and lightly browned crust.",
+        imageUrl: "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80",
+        accentColor: "#C67D30"
+      },
+      {
+        keywords: ["bagel", "pretzel"],
+        title: "Artisan Bagel",
+        category: "Boiled & Baked Ring",
+        description: "Dense, chewy ring-shaped bread boiled before baking for a shiny, crisp exterior.",
+        imageUrl: "https://images.unsplash.com/photo-1585478259715-876acc5be8eb?auto=format&fit=crop&w=800&q=80",
+        accentColor: "#A86428"
+      },
+      {
+        keywords: ["background", "nothing", "no bread", "empty", "none", "other"],
+        title: "No Bread Detected",
+        category: "Background / Ambient Scene",
+        description: "No bakery item is currently in focus. Place a bread item clearly inside the camera frame or upload a photo.",
+        imageUrl: null, // Uses dedicated clean SVG illustration
+        isBackground: true,
+        accentColor: "#7A6352"
+      }
+    ];
+
+    /**
+     * Generates a crisp inline SVG data URI illustration for fallback or custom bread classes
+     */
+    function generateBakerySvgDataUri(label, isBackground = false) {
+      const safeLabel = String(label || "Bread").replace(/[<>&'"]/g, "");
+      if (isBackground) {
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
+          <rect width="600" height="400" fill="#F3ECE1"/>
+          <circle cx="300" cy="180" r="76" fill="#E5D8C5" stroke="#C8B398" stroke-width="3" stroke-dasharray="8 8"/>
+          <path d="M270 180h60M300 150v60" stroke="#7A6352" stroke-width="4" stroke-linecap="round"/>
+          <text x="300" y="295" text-anchor="middle" font-family="Georgia, serif" font-size="22" font-weight="bold" fill="#5C3A21">${safeLabel}</text>
+          <text x="300" y="325" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#7A6352">Present a bread item to scan</text>
+        </svg>`;
+        return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+      }
+
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
+        <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#FAF6F0"/>
+            <stop offset="100%" stop-color="#EADBC8"/>
+          </linearGradient>
+          <linearGradient id="crust" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#E59A38"/>
+            <stop offset="100%" stop-color="#8C4A19"/>
+          </linearGradient>
+        </defs>
+        <rect width="600" height="400" fill="url(#bg)"/>
+        <ellipse cx="300" cy="245" rx="145" ry="22" fill="#5C3A21" opacity="0.15"/>
+        <path d="M170 215 C170 135, 430 135, 430 215 C430 235, 415 245, 395 245 L205 245 C185 245, 170 235, 170 215 Z" fill="url(#crust)"/>
+        <path d="M245 152 Q260 175 248 195" stroke="#FAF6F0" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.75"/>
+        <path d="M300 148 Q315 173 303 195" stroke="#FAF6F0" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.75"/>
+        <path d="M355 152 Q370 175 358 195" stroke="#FAF6F0" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.75"/>
+        <text x="300" y="305" text-anchor="middle" font-family="Georgia, serif" font-size="26" font-weight="bold" fill="#3E2514">${safeLabel}</text>
+        <text x="300" y="334" text-anchor="middle" font-family="sans-serif" font-size="13" letter-spacing="2" fill="#7A6352">ARTISANAL BAKERY CLASS</text>
+      </svg>`;
+      return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
+    }
+
+    /**
+     * Resolves any Teachable Machine class label to its corresponding visual metadata & image
+     */
+    function getBreadVisualForClass(className) {
+      const normalized = String(className || "").toLowerCase().trim();
+      
+      // Match against curated catalog keywords
+      for (const item of BREAD_VISUAL_CATALOG) {
+        if (item.keywords.some(kw => normalized.includes(kw))) {
+          return {
+            title: className,
+            category: item.category,
+            description: item.description,
+            imageUrl: item.imageUrl || generateBakerySvgDataUri(className, item.isBackground),
+            fallbackUrl: generateBakerySvgDataUri(className, item.isBackground),
+            isBackground: Boolean(item.isBackground)
+          };
+        }
+      }
+
+      // Default artisanal bread visual for custom/unlisted bread names
+      const fallbackSvg = generateBakerySvgDataUri(className, false);
+      return {
+        title: className,
+        category: "Teachable Machine Bread Class",
+        description: `Recognized "${className}" from your custom bakery classification model.`,
+        imageUrl: "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80",
+        fallbackUrl: fallbackSvg,
+        isBackground: false
+      };
+    }
+
+    /**
+     * Toast Notification Helpers (Never uses alert)
+     */
+    let toastTimeout = null;
+    function showToast(message) {
+      const banner = document.getElementById("toastBanner");
+      const msgEl = document.getElementById("toastMessage");
+      msgEl.textContent = message;
+      banner.classList.remove("hidden");
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(hideToast, 4500);
+    }
+    function hideToast() {
+      document.getElementById("toastBanner").classList.add("hidden");
+    }
+
+    /**
+     * Updates the top header status badge
+     */
+    function setStatus(state, text) {
+      const badge = document.getElementById("statusBadge");
+      const dot = document.getElementById("statusDot");
+      const label = document.getElementById("statusText");
+      label.textContent = text;
+
+      if (state === "loading") {
+        badge.className = "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-200 transition-all";
+        dot.className = "w-2 h-2 rounded-full bg-amber-500 animate-ping";
+      } else if (state === "ready") {
+        badge.className = "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-900 border border-emerald-200 transition-all";
+        dot.className = "w-2 h-2 rounded-full bg-emerald-500";
+      } else if (state === "scanning") {
+        badge.className = "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-bakery-wheat text-white border border-amber-600 shadow-sm transition-all";
+        dot.className = "w-2 h-2 rounded-full bg-white animate-pulse";
+      } else if (state === "error") {
+        badge.className = "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-100 text-red-900 border border-red-200 transition-all";
+        dot.className = "w-2 h-2 rounded-full bg-red-500";
+      }
+    }
+
+    /**
+     * Initializes the Teachable Machine model and populates UI galleries & bars
+     */
+    async function initModel() {
+      try {
+        setStatus("loading", "Loading Bread Model...");
+        const modelURL = MODEL_BASE_URL + "model.json";
+        const metadataURL = MODEL_BASE_URL + "metadata.json";
+
+        tmModel = await tmImage.load(modelURL, metadataURL);
+        classLabels = tmModel.getClassLabels();
+
+        document.getElementById("classCountBadge").textContent = `${classLabels.length} Classes`;
+        document.getElementById("startWebcamBtn").disabled = false;
+
+        renderPredictionBars(classLabels.map(name => ({ className: name, probability: 0 })));
+        renderReferenceGallery(classLabels);
+
+        // Set initial showcase image to first non-background bread class if available
+        const initialClass = classLabels.find(c => !c.toLowerCase().includes("background")) || classLabels[0];
+        if (initialClass) {
+          const initialVisual = getBreadVisualForClass(initialClass);
+          const showcaseImg = document.getElementById("showcaseBreadImg");
+          showcaseImg.src = initialVisual.imageUrl;
+          showcaseImg.onerror = () => { showcaseImg.src = initialVisual.fallbackUrl; };
+        }
+
+        setStatus("ready", `Model Ready (${classLabels.length} Classes)`);
+      } catch (error) {
+        console.error("Failed to load Teachable Machine model:", error);
+        setStatus("error", "Model Load Error");
+        showToast("Could not load model from Teachable Machine. Please check your network connection.");
+      }
+    }
+
+    /**
+     * Renders the Reference Gallery cards for every class in the model
+     */
+    function renderReferenceGallery(labels) {
+      const grid = document.getElementById("referenceGalleryGrid");
+      grid.innerHTML = "";
+
+      labels.forEach((label, index) => {
+        const visual = getBreadVisualForClass(label);
+        const card = document.createElement("div");
+        card.id = `gallery-card-${index}`;
+        card.dataset.className = label;
+        card.className = "group relative bg-bakery-cream rounded-2xl overflow-hidden border-2 border-bakery-border transition-all duration-300 flex flex-col";
+
+        card.innerHTML = `
+          <div class="relative h-32 sm:h-36 w-full bg-bakery-parchment overflow-hidden">
+            <img 
+              src="${visual.imageUrl}" 
+              alt="${label}" 
+              onerror="this.onerror=null;this.src='${visual.fallbackUrl}';"
+              class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            />
+            <span id="gallery-badge-${index}" class="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-black/65 text-white backdrop-blur-sm">
+              0%
+            </span>
+          </div>
+          <div class="p-3 flex-1 flex flex-col justify-between">
+            <div>
+              <h4 class="font-serif font-bold text-sm sm:text-base text-bakery-roast line-clamp-1">${label}</h4>
+              <p class="text-[11px] text-bakery-muted line-clamp-1 mt-0.5">${visual.category}</p>
+            </div>
+            <div class="mt-2 pt-2 border-t border-bakery-border/60 flex items-center justify-between text-[11px]">
+              <span class="text-bakery-muted">Class #${index + 1}</span>
+              <span id="gallery-status-${index}" class="font-semibold text-bakery-crust">Reference</span>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    /**
+     * Renders or updates the live confidence progress bars
+     */
+    function renderPredictionBars(predictions) {
+      const container = document.getElementById("predictionBarsContainer");
+      
+      // Create DOM nodes once if not already present
+      if (container.children.length !== predictions.length || container.querySelector(".animate-pulse")) {
+        container.innerHTML = "";
+        predictions.forEach((pred, idx) => {
+          const row = document.createElement("div");
+          row.className = "space-y-1.5";
+          row.innerHTML = `
+            <div class="flex items-center justify-between text-xs sm:text-sm">
+              <span id="bar-label-${idx}" class="font-semibold text-bakery-roast truncate pr-2">${pred.className}</span>
+              <span id="bar-pct-${idx}" class="font-mono font-bold text-bakery-crust">0.0%</span>
+            </div>
+            <div class="w-full h-2.5 bg-bakery-parchment rounded-full overflow-hidden border border-bakery-border/60">
+              <div id="bar-fill-${idx}" class="h-full bg-bakery-crust rounded-full transition-all duration-150" style="width: 0%"></div>
+            </div>
+          `;
+          container.appendChild(row);
+        });
+      }
+
+      // Find highest probability index
+      let maxIdx = 0;
+      predictions.forEach((p, i) => {
+        if (p.probability > predictions[maxIdx].probability) maxIdx = i;
+      });
+
+      // Update percentages & gallery highlights
+      predictions.forEach((pred, idx) => {
+        const pct = (pred.probability * 100).toFixed(1);
+        const isWinner = idx === maxIdx && pred.probability > 0.15;
+
+        const pctEl = document.getElementById(`bar-pct-${idx}`);
+        const fillEl = document.getElementById(`bar-fill-${idx}`);
+        const labelEl = document.getElementById(`bar-label-${idx}`);
+
+        if (pctEl && fillEl && labelEl) {
+          pctEl.textContent = `${pct}%`;
+          fillEl.style.width = `${pct}%`;
+          if (isWinner) {
+            fillEl.className = "h-full bg-bakery-wheat rounded-full transition-all duration-150";
+            labelEl.className = "font-bold text-bakery-wheat truncate pr-2";
+          } else {
+            fillEl.className = "h-full bg-bakery-crust/60 rounded-full transition-all duration-150";
+            labelEl.className = "font-medium text-bakery-roast truncate pr-2";
+          }
+        }
+
+        // Update corresponding Reference Gallery card
+        const cardEl = document.getElementById(`gallery-card-${idx}`);
+        const badgeEl = document.getElementById(`gallery-badge-${idx}`);
+        const statusEl = document.getElementById(`gallery-status-${idx}`);
+        if (cardEl && badgeEl && statusEl) {
+          badgeEl.textContent = `${Math.round(pred.probability * 100)}%`;
+          if (isWinner) {
+            cardEl.className = "group relative bg-white rounded-2xl overflow-hidden border-2 border-bakery-wheat shadow-glow scale-[1.02] transition-all duration-300 flex flex-col";
+            badgeEl.className = "absolute top-2 right-2 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-bakery-wheat text-white shadow";
+            statusEl.textContent = "ACTIVE MATCH";
+            statusEl.className = "font-bold text-bakery-wheat";
+          } else {
+            cardEl.className = "group relative bg-bakery-cream rounded-2xl overflow-hidden border-2 border-bakery-border transition-all duration-300 flex flex-col opacity-85 hover:opacity-100";
+            badgeEl.className = "absolute top-2 right-2 px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-black/65 text-white backdrop-blur-sm";
+            statusEl.textContent = "Reference";
+            statusEl.className = "font-semibold text-bakery-crust";
+          }
+        }
+      });
+    }
+
+    /**
+     * Updates the prominent "Detected Bread Showcase" box with the top prediction
+     */
+    function updateDetectedShowcase(predictions) {
+      if (!predictions || predictions.length === 0) return;
+
+      // Sort copy to find top prediction without mutating original class order
+      const sorted = [...predictions].sort((a, b) => b.probability - a.probability);
+      const top = sorted[0];
+      const confidencePct = (top.probability * 100).toFixed(1);
+
+      const showcaseTitle = document.getElementById("showcaseBreadTitle");
+      const showcaseDesc = document.getElementById("showcaseBreadDesc");
+      const showcaseImg = document.getElementById("showcaseBreadImg");
+      const showcaseCategory = document.getElementById("showcaseCategoryTag");
+      const showcaseScoreLarge = document.getElementById("showcaseScoreLarge");
+      const showcasePill = document.getElementById("showcaseConfidencePill");
+
+      showcaseScoreLarge.textContent = `${confidencePct}%`;
+      showcasePill.textContent = top.probability >= 0.75 ? "High Confidence Match" : (top.probability >= 0.4 ? "Likely Match" : "Scanning...");
+      showcasePill.className = top.probability >= 0.75
+        ? "px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-900 border border-emerald-200"
+        : "px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-200";
+
+      // Only swap image & text if top class changed to prevent flickering
+      if (currentTopClass !== top.className) {
+        currentTopClass = top.className;
+        const visual = getBreadVisualForClass(top.className);
+        showcaseTitle.textContent = visual.title;
+        showcaseDesc.textContent = visual.description;
+        showcaseCategory.textContent = visual.category;
+        showcaseImg.src = visual.imageUrl;
+        showcaseImg.onerror = () => {
+          showcaseImg.onerror = null;
+          showcaseImg.src = visual.fallbackUrl;
+        };
+      }
+    }
+
+    /**
+     * Runs prediction on any HTMLImageElement, HTMLVideoElement, or HTMLCanvasElement
+     */
+    async function predictElement(element) {
+      if (!tmModel) return;
+      try {
+        const predictions = await tmModel.predict(element);
+        renderPredictionBars(predictions);
+        updateDetectedShowcase(predictions);
+      } catch (err) {
+        console.error("Prediction error:", err);
+      }
+    }
+
+    /**
+     * ============================================================================
+     * WEBCAM STREAMING CONTROLS
+     * ============================================================================
+     */
+    async function startWebcam() {
+      if (!tmModel) {
+        showToast("Please wait for the bread model to finish loading.");
+        return;
+      }
+
+      try {
+        stopWebcam(); // Clean up any existing stream first
+        setStatus("loading", "Starting Camera...");
+
+        // Initialize Teachable Machine Webcam helper
+        const flip = false; // We handle visual mirroring via CSS so back cameras stay unmirrored
+        tmWebcam = new tmImage.Webcam(400, 400, flip);
+        await tmWebcam.setup({ facingMode: facingMode });
+        await tmWebcam.play();
+
+        const container = document.getElementById("webcamContainer");
+        container.innerHTML = "";
+        container.appendChild(tmWebcam.canvas);
+        container.classList.remove("hidden");
+
+        document.getElementById("webcamPlaceholder").classList.add("hidden");
+        document.getElementById("scannerBeam").classList.remove("hidden");
+        document.getElementById("liveIndicator").classList.remove("hidden");
+        document.getElementById("startWebcamBtn").classList.add("hidden");
+        document.getElementById("stopWebcamBtn").classList.remove("hidden");
+
+        isWebcamRunning = true;
+        setStatus("scanning", "Live Scanning Active");
+        animationFrameId = window.requestAnimationFrame(webcamLoop);
+      } catch (err) {
+        console.error("Webcam access error:", err);
+        setStatus("ready", "Camera Unavailable");
+        showToast("Unable to access camera. Please grant camera permissions or use Upload Photo mode.");
+      }
+    }
+
+    async function webcamLoop() {
+      if (!isWebcamRunning || !tmWebcam) return;
+      tmWebcam.update();
+      await predictElement(tmWebcam.canvas);
+      animationFrameId = window.requestAnimationFrame(webcamLoop);
+    }
+
+    function stopWebcam() {
+      isWebcamRunning = false;
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+      if (tmWebcam) {
+        try {
+          tmWebcam.stop();
+        } catch (e) {
+          // Ignore stop errors if stream already closed
+        }
+        tmWebcam = null;
+      }
+
+      document.getElementById("webcamContainer").classList.add("hidden");
+      document.getElementById("webcamPlaceholder").classList.remove("hidden");
+      document.getElementById("scannerBeam").classList.add("hidden");
+      document.getElementById("liveIndicator").classList.add("hidden");
+      document.getElementById("startWebcamBtn").classList.remove("hidden");
+      document.getElementById("stopWebcamBtn").classList.add("hidden");
+
+      if (tmModel) {
+        setStatus("ready", `Model Ready (${classLabels.length} Classes)`);
+      }
+    }
+
+    /**
+     * ============================================================================
+     * IMAGE UPLOAD & DRAG-AND-DROP HANDLERS
+     * ============================================================================
+     */
+    function handleUploadedFile(file) {
+      if (!file || !file.type.startsWith("image/")) {
+        showToast("Please select a valid image file (JPG, PNG, or WebP).");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const imgEl = document.getElementById("uploadedImagePreview");
+        imgEl.onload = async () => {
+          document.getElementById("uploadPrompt").classList.add("hidden");
+          imgEl.classList.remove("hidden");
+          setStatus("scanning", "Photo Classified");
+          await predictElement(imgEl);
+        };
+        imgEl.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    /**
+     * ============================================================================
+     * EVENT LISTENERS & INITIALIZATION
+     * ============================================================================
+     */
+    window.addEventListener("DOMContentLoaded", () => {
+      // Load Teachable Machine Model immediately
+      initModel();
+
+      // Mode Tabs: Live Camera vs Upload Photo
+      const modeWebcamBtn = document.getElementById("modeWebcamBtn");
+      const modeUploadBtn = document.getElementById("modeUploadBtn");
+      const webcamPanel = document.getElementById("webcamPanel");
+      const uploadPanel = document.getElementById("uploadPanel");
+
+      modeWebcamBtn.addEventListener("click", () => {
+        modeWebcamBtn.className = "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-bakery-crust text-white shadow-sm transition";
+        modeUploadBtn.className = "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-bakery-muted hover:text-bakery-roast transition";
+        webcamPanel.classList.remove("hidden");
+        uploadPanel.classList.add("hidden");
+      });
+
+      modeUploadBtn.addEventListener("click", () => {
+        stopWebcam();
+        modeUploadBtn.className = "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-bakery-crust text-white shadow-sm transition";
+        modeWebcamBtn.className = "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-bakery-muted hover:text-bakery-roast transition";
+        uploadPanel.classList.remove("hidden");
+        webcamPanel.classList.add("hidden");
+      });
+
+      // Webcam Buttons
+      document.getElementById("startWebcamBtn").addEventListener("click", startWebcam);
+      document.getElementById("stopWebcamBtn").addEventListener("click", stopWebcam);
+
+      // Mirror Toggle
+      document.getElementById("mirrorToggleBtn").addEventListener("click", () => {
+        isMirrored = !isMirrored;
+        const container = document.getElementById("webcamContainer");
+        const stateText = document.getElementById("mirrorStateText");
+        if (isMirrored) {
+          container.classList.add("mirror-video");
+          stateText.textContent = "ON";
+        } else {
+          container.classList.remove("mirror-video");
+          stateText.textContent = "OFF";
+        }
+      });
+
+      // Flip Front/Back Camera
+      document.getElementById("switchCameraBtn").addEventListener("click", async () => {
+        facingMode = facingMode === "environment" ? "user" : "environment";
+        // Automatically mirror front camera and unmirror back camera
+        isMirrored = facingMode === "user";
+        const container = document.getElementById("webcamContainer");
+        document.getElementById("mirrorStateText").textContent = isMirrored ? "ON" : "OFF";
+        container.classList.toggle("mirror-video", isMirrored);
+
+        if (isWebcamRunning) {
+          await startWebcam();
+        } else {
+          showToast(`Camera set to ${facingMode === "user" ? "Front" : "Back"} lens.`);
+        }
+      });
+
+      // Upload Dropzone & File Input
+      const dropZone = document.getElementById("dropZone");
+      const fileInput = document.getElementById("imageFileInput");
+      const chooseAnotherBtn = document.getElementById("chooseAnotherImageBtn");
+
+      dropZone.addEventListener("click", () => fileInput.click());
+      chooseAnotherBtn.addEventListener("click", () => fileInput.click());
+
+      fileInput.addEventListener("change", (e) => {
+        if (e.target.files && e.target.files[0]) {
+          handleUploadedFile(e.target.files[0]);
+        }
+      });
+
+      dropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropZone.classList.add("border-bakery-wheat", "bg-bakery-wheatLight/25");
+      });
+
+      dropZone.addEventListener("dragleave", () => {
+        dropZone.classList.remove("border-bakery-wheat", "bg-bakery-wheatLight/25");
+      });
+
+      dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("border-bakery-wheat", "bg-bakery-wheatLight/25");
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          handleUploadedFile(e.dataTransfer.files[0]);
+        }
+      });
+
+      // Scroll smoothly to Code Reference section
+      document.getElementById("toggleCodeBtn").addEventListener("click", () => {
+        document.getElementById("codeReferenceSection").scrollIntoView({ behavior: "smooth" });
+      });
+
+      // Copy Integration Code using execCommand fallback
+      document.getElementById("copyCodeBtn").addEventListener("click", () => {
+        const codeText = document.getElementById("integrationCodeBlock").innerText;
+        const tempTextarea = document.createElement("textarea");
+        tempTextarea.value = codeText;
+        document.body.appendChild(tempTextarea);
+        tempTextarea.select();
+        try {
+          document.execCommand("copy");
+          const btnText = document.getElementById("copyCodeBtnText");
+          btnText.textContent = "Copied!";
+          showToast("Integration code copied to clipboard.");
+          setTimeout(() => { btnText.textContent = "Copy Snippet"; }, 2000);
+        } catch (err) {
+          showToast("Unable to copy code automatically.");
+        }
+        document.body.removeChild(tempTextarea);
+      });
+    });
+  </script>
+</body>
+</html>
